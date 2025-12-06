@@ -107,7 +107,7 @@ func initProjectConfig() error {
 }
 
 func printExampleConfig() {
-	fmt.Println(`
+	fmt.Print(`
 Example global config (~/.config/wt/config.yaml):
 
 windows:
@@ -132,7 +132,7 @@ agent: claude
 }
 
 func printExampleProjectConfig() {
-	fmt.Println(`
+	fmt.Print(`
 Example project config (.wt.yaml):
 
 windows:

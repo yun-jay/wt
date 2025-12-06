@@ -48,6 +48,19 @@ func GetCurrentWindow() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// GetCurrentWindowName returns the current window name
+func GetCurrentWindowName() (string, error) {
+	if !IsInsideTmux() {
+		return "", ErrNotInTmux
+	}
+	cmd := exec.Command("tmux", "display-message", "-p", "#{window_name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // SessionExists checks if a tmux session exists
 func SessionExists(name string) bool {
 	cmd := exec.Command("tmux", "has-session", "-t", name)
@@ -200,7 +213,11 @@ func SwitchSession(name string) error {
 	if IsInsideTmux() {
 		// Inside tmux: use switch-client
 		cmd := exec.Command("tmux", "switch-client", "-t", name)
-		return cmd.Run()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("switch-client failed: %w (output: %s)", err, string(output))
+		}
+		return nil
 	}
 
 	// Outside tmux: attach to session

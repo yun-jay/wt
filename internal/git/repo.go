@@ -66,6 +66,12 @@ func FindRepoFrom(path string) (*Repo, error) {
 	}, nil
 }
 
+// ProjectName returns the project name (bare repo dir without .git suffix)
+func (r *Repo) ProjectName() string {
+	base := filepath.Base(r.GitDir)
+	return strings.TrimSuffix(base, ".git")
+}
+
 // isBareRepo checks if the git directory is a bare repository
 func isBareRepo(gitDir string) (bool, error) {
 	cmd := exec.Command("git", "--git-dir", gitDir, "config", "--get", "core.bare")
