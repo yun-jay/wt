@@ -188,12 +188,29 @@ wt completions fish | source
 Add these keybindings to your `~/.tmux.conf`:
 
 ```bash
-# Toggle Claude pane with prefix + C
-bind C run-shell "wt toggle claude"
-
-# Quick worktree switching (popup picker)
-bind w display-popup -E -w 50% -h 60% "wt list && read -p 'Switch to: ' wt && wt switch $wt"
+# ===== WORKTREE MANAGEMENT (wt CLI) =====
+bind g run-shell "wt toggle >/dev/null 2>&1"
+bind T display-popup -E -w 60% -h 50% "wt switch"
+bind B command-prompt -p "new branch:" "run-shell 'wt add %% --no-switch >/dev/null 2>&1'"
 ```
+
+Then reload: `tmux source-file ~/.tmux.conf`
+
+### Key Bindings
+
+| Binding | Action |
+|---------|--------|
+| `prefix + g` | Toggle Claude pane (20% on right) |
+| `prefix + T` | Switch worktree (interactive popup) |
+| `prefix + B` | Create new worktree (prompts for branch) |
+
+### Picker Navigation
+
+The interactive picker (`prefix + T`) supports:
+- `↑/↓` or `ctrl+n/p` - Navigate (wraps around)
+- Type to fuzzy filter
+- `Enter` - Select
+- `Esc` - Cancel
 
 ## Commands
 
