@@ -50,6 +50,36 @@ func BreakPane(session, sourceWindow string, paneIndex int, newWindowName string
 	return cmd.Run()
 }
 
+// SetPaneTitle sets the title of a pane (for identification)
+func SetPaneTitle(session, window string, paneIndex int, title string) error {
+	target := fmt.Sprintf("%s:%s.%d", session, window, paneIndex)
+	cmd := exec.Command("tmux", "select-pane", "-t", target, "-T", title)
+	return cmd.Run()
+}
+
+// FindPaneByTitle finds a pane index by its title in a window
+// Returns -1 if not found
+func FindPaneByTitle(session, window, title string) int {
+	target := session + ":" + window
+	cmd := exec.Command("tmux", "list-panes", "-t", target, "-F", "#{pane_index}:#{pane_title}")
+	output, err := cmd.Output()
+	if err != nil {
+		return -1
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 && parts[1] == title {
+			idx, err := strconv.Atoi(parts[0])
+			if err == nil {
+				return idx
+			}
+		}
+	}
+	return -1
+}
+
 // JoinPane joins a pane from another window to the current window
 func JoinPane(session, sourceWindow, targetWindow string, position string, sizePercent int) error {
 	source := session + ":" + sourceWindow + ".0"
@@ -94,6 +124,13 @@ func Toggle(cfg *config.Config) error {
 	toggleCfg := cfg.TogglePane
 	hiddenWindowName := "_" + toggleCfg.Name
 
+	// Check if we're currently on the hidden toggle window itself
+	currentWindowName, _ := GetCurrentWindowName()
+	if currentWindowName == hiddenWindowName {
+		// Already on the hidden toggle window - do nothing or could switch to previous window
+		return nil
+	}
+
 	// Check if the toggle pane is currently visible in this window
 	if isTogglePaneVisible(session, currentWindow, toggleCfg.Name) {
 		// Pane is visible - hide it (break out to hidden window)
@@ -112,6 +149,9 @@ func isTogglePaneVisible(session, window, paneName string) bool {
 	return idx < 0
 }
 
+// togglePaneTitle is the title used to identify the toggle pane
+const togglePaneTitle = "wt-toggle-pane"
+
 // hideTogglePane hides the toggle pane by breaking it out to a hidden window
 func hideTogglePane(session, window, hiddenWindowName string, toggleCfg *config.TogglePaneConfig) error {
 	// Run on_close hook first
@@ -119,19 +159,23 @@ func hideTogglePane(session, window, hiddenWindowName string, toggleCfg *config.
 		runHook(toggleCfg.Hooks.OnClose)
 	}
 
-	// Find the pane index to break out based on position
-	paneIdx := 0
-	if toggleCfg.Position == "right" {
-		// Get pane count and break the last one
-		paneCount, _ := CountPanesInWindow(session, window)
-		paneIdx = paneCount - 1
+	// Find the toggle pane by its title
+	paneIdx := FindPaneByTitle(session, window, togglePaneTitle)
+	if paneIdx < 0 {
+		// Fallback: try to find by position (for backwards compatibility)
+		if toggleCfg.Position == "right" {
+			paneCount, _ := CountPanesInWindow(session, window)
+			paneIdx = paneCount - 1
+		} else {
+			paneIdx = 0
+		}
 	}
 
 	if err := BreakPane(session, window, paneIdx, hiddenWindowName); err != nil {
 		return fmt.Errorf("failed to hide pane: %w", err)
 	}
 
-	// Select the main pane
+	// Select the first pane (main content)
 	SelectPane(0)
 
 	return nil
@@ -159,6 +203,17 @@ func showTogglePane(session, currentWindow, hiddenWindowName string, toggleCfg *
 	if err := JoinPane(session, strconv.Itoa(hiddenWindowIdx), currentWindow, position, size); err != nil {
 		return fmt.Errorf("failed to show pane: %w", err)
 	}
+
+	// Set the title on the toggle pane for identification
+	// After join-pane, the new pane index depends on position
+	paneCount, _ := CountPanesInWindow(session, currentWindow)
+	var togglePaneIdx int
+	if position == "left" {
+		togglePaneIdx = 0 // Joined pane is at the beginning
+	} else {
+		togglePaneIdx = paneCount - 1 // Joined pane is at the end
+	}
+	SetPaneTitle(session, currentWindow, togglePaneIdx, togglePaneTitle)
 
 	// Run on_open hook
 	if toggleCfg.Hooks.OnOpen != "" {
@@ -211,6 +266,16 @@ func createAndShowTogglePane(session, currentWindow string, toggleCfg *config.To
 	if err := JoinPane(session, strconv.Itoa(hiddenWindowIdx), currentWindow, position, size); err != nil {
 		return fmt.Errorf("failed to show pane: %w", err)
 	}
+
+	// Set the title on the toggle pane for identification
+	paneCount, _ := CountPanesInWindow(session, currentWindow)
+	var togglePaneIdx int
+	if position == "left" {
+		togglePaneIdx = 0
+	} else {
+		togglePaneIdx = paneCount - 1
+	}
+	SetPaneTitle(session, currentWindow, togglePaneIdx, togglePaneTitle)
 
 	// Run on_open hook
 	if toggleCfg.Hooks.OnOpen != "" {

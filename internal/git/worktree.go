@@ -117,8 +117,9 @@ func (r *Repo) CreateWorktree(branch, baseBranch string) (*Worktree, error) {
 	cmd := exec.Command("git", "--git-dir", r.GitDir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	branchExists := cmd.Run() == nil
 
-	// Determine the worktree path (sibling to .git directory)
-	wtPath := filepath.Join(r.WorktreeRoot, branch)
+	// Determine the worktree path (inside the bare repo directory)
+	// e.g., foo.git + branch "main" -> foo.git/main
+	wtPath := filepath.Join(r.GitDir, branch)
 
 	// Check if path already exists
 	if _, err := os.Stat(wtPath); err == nil {
@@ -192,5 +193,5 @@ func (r *Repo) DeleteWorktree(nameOrPath string, force bool) error {
 
 // GetWorktreePath returns the path where a new worktree with the given branch would be created
 func (r *Repo) GetWorktreePath(branch string) string {
-	return filepath.Join(r.WorktreeRoot, branch)
+	return filepath.Join(r.GitDir, branch)
 }

@@ -90,9 +90,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	// Switch to the new worktree
 	if !addNoSwitch {
-		fmt.Printf("Switching to '%s'...\n", sessionName)
+		if tmux.IsInsideTmux() {
+			fmt.Printf("Switching to session '%s'...\n", sessionName)
+		} else {
+			fmt.Printf("Attaching to session '%s'...\n", sessionName)
+		}
 		if err := tmux.SwitchSession(sessionName); err != nil {
-			return fmt.Errorf("failed to switch session: %w", err)
+			return fmt.Errorf("failed to switch to session: %w", err)
 		}
 	}
 

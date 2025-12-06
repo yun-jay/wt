@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -cover ./...
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Build
+        run: go build -o wt ./cmd/wt
+
+      - name: Verify binary
+        run: ./wt --help
+

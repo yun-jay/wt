@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/yunus/wt/internal/git"
@@ -23,7 +24,8 @@ If no tmux session exists for the worktree, one will be created automatically.`,
 func runSwitch(cmd *cobra.Command, args []string) error {
 	repo, err := git.FindRepo()
 	if err != nil {
-		return fmt.Errorf("failed to find git repository: %w", err)
+		cwd, _ := os.Getwd()
+		return fmt.Errorf("failed to find git repository (cwd: %s): %w", cwd, err)
 	}
 
 	var worktreeName string
