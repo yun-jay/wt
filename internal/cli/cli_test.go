@@ -111,8 +111,8 @@ func TestAddAndDeleteWorkflow(t *testing.T) {
 	// Reset global state
 	projectRoot = ""
 	cfg = nil
-	addNoSwitch = true   // Don't try to switch tmux session in tests
-	deleteForce = true   // Skip confirmation prompt in tests
+	addNoSwitch = true // Don't try to switch tmux session in tests
+	deleteForce = true // Skip confirmation prompt in tests
 
 	// Initialize config
 	if err := initializeConfig(nil, nil); err != nil {

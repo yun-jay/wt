@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	ErrNotGitRepo     = errors.New("not a git repository")
-	ErrNotBareRepo    = errors.New("not a bare repository")
-	ErrNoWorktrees    = errors.New("no worktrees found")
+	ErrNotGitRepo  = errors.New("not a git repository")
+	ErrNotBareRepo = errors.New("not a bare repository")
+	ErrNoWorktrees = errors.New("no worktrees found")
 )
 
 // Repo represents a bare git repository

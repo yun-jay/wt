@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yunus/wt/internal/git"
+	"github.com/yunus/wt/internal/state"
 	"github.com/yunus/wt/internal/tmux"
 	"github.com/yunus/wt/internal/tui"
 )
@@ -41,9 +42,22 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no worktrees found")
 		}
 
-		// Build picker items
-		items := make([]tui.Item, len(worktrees))
+		// Load state for sorting by recency
+		st, _ := state.LoadState(repo.ProjectRoot)
+
+		// Get worktree names and sort by recency
+		wtNames := make([]string, len(worktrees))
+		wtMap := make(map[string]git.Worktree)
 		for i, wt := range worktrees {
+			wtNames[i] = wt.Name()
+			wtMap[wt.Name()] = wt
+		}
+		sortedNames := st.GetSortedWorktrees(wtNames)
+
+		// Build picker items in sorted order
+		items := make([]tui.Item, len(sortedNames))
+		for i, name := range sortedNames {
+			wt := wtMap[name]
 			desc := wt.Path
 			if tmux.SessionExists(wt.SessionName()) {
 				desc += " [tmux]"
@@ -74,6 +88,11 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	}
 
 	sessionName := wt.SessionName()
+
+	// Record visit in state
+	st, _ := state.LoadState(repo.ProjectRoot)
+	st.RecordVisit(wt.Name())
+	_ = st.Save(repo.ProjectRoot)
 
 	// Create session if it doesn't exist
 	if !tmux.SessionExists(sessionName) {

@@ -36,13 +36,16 @@ type Config struct {
 
 	// ProtectedBranches that cannot be deleted
 	ProtectedBranches []string `yaml:"protected_branches,omitempty"`
+
+	// Bookmarks is an ordered list of bookmarked worktree names
+	Bookmarks []string `yaml:"bookmarks,omitempty"`
 }
 
 // Window represents a tmux window (tab)
 type Window struct {
-	Name   string `yaml:"name"`
-	Panes  []Pane `yaml:"panes,omitempty"`
-	Focus  bool   `yaml:"focus,omitempty"` // Focus this window on startup
+	Name  string `yaml:"name"`
+	Panes []Pane `yaml:"panes,omitempty"`
+	Focus bool   `yaml:"focus,omitempty"` // Focus this window on startup
 }
 
 // TogglePaneConfig defines a pane that can be toggled in any window
@@ -323,4 +326,38 @@ func (c *Config) GetTogglePaneCommand() string {
 		return ""
 	}
 	return c.ExpandAgentPlaceholder(c.TogglePane.Command)
+}
+
+// AddBookmark adds a worktree name to bookmarks (at the end)
+func (c *Config) AddBookmark(name string) bool {
+	if c.IsBookmarked(name) {
+		return false
+	}
+	c.Bookmarks = append(c.Bookmarks, name)
+	return true
+}
+
+// RemoveBookmark removes a worktree name from bookmarks
+func (c *Config) RemoveBookmark(name string) bool {
+	idx := c.GetBookmarkIndex(name)
+	if idx == -1 {
+		return false
+	}
+	c.Bookmarks = append(c.Bookmarks[:idx], c.Bookmarks[idx+1:]...)
+	return true
+}
+
+// IsBookmarked returns true if the worktree is bookmarked
+func (c *Config) IsBookmarked(name string) bool {
+	return c.GetBookmarkIndex(name) != -1
+}
+
+// GetBookmarkIndex returns the 0-based index of the bookmark, or -1 if not found
+func (c *Config) GetBookmarkIndex(name string) int {
+	for i, b := range c.Bookmarks {
+		if b == name {
+			return i
+		}
+	}
+	return -1
 }

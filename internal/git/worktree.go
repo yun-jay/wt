@@ -18,11 +18,11 @@ var (
 
 // Worktree represents a git worktree
 type Worktree struct {
-	Path     string
-	Branch   string
-	Commit   string
-	IsMain   bool // Is this the main/master/dev worktree?
-	IsBare   bool // Is this a bare worktree entry?
+	Path   string
+	Branch string
+	Commit string
+	IsMain bool // Is this the main/master/dev worktree?
+	IsBare bool // Is this a bare worktree entry?
 }
 
 // Name returns the worktree name (directory basename)
