@@ -63,6 +63,9 @@ func init() {
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(prevCmd)
 	rootCmd.AddCommand(jumpCmd)
+
+	// Indicator commands
+	rootCmd.AddCommand(indicatorCmd)
 }
 
 func initializeConfig(cmd *cobra.Command, args []string) error {

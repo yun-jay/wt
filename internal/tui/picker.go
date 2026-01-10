@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 )
 
 var (
@@ -16,11 +18,19 @@ var (
 	titleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
 )
 
+// Indicator represents a status indicator to display
+type Indicator struct {
+	Symbol string
+	Color  string
+}
+
 // Item represents an item in the picker
 type Item struct {
-	Name        string
-	Description string
-	Value       interface{}
+	Name         string
+	Description  string
+	Value        interface{}
+	Indicators   []Indicator // Status indicators to display before the name
+	IndicatorKey string      // Key for looking up live indicator updates (e.g., worktree name)
 }
 
 // PickerModel is the model for the interactive picker
@@ -119,7 +129,16 @@ func (m PickerModel) View() string {
 			style = selectedStyle
 		}
 
-		line := cursor + style.Render(item.Name)
+		line := cursor
+		// Render indicators before the name
+		for _, ind := range item.Indicators {
+			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
+			line += indStyle.Render(ind.Symbol)
+		}
+		if len(item.Indicators) > 0 {
+			line += " "
+		}
+		line += style.Render(item.Name)
 		if item.Description != "" {
 			line += " " + dimStyle.Render(item.Description)
 		}
@@ -295,7 +314,16 @@ func (m PickerWithDeleteModel) View() string {
 			style = selectedStyle
 		}
 
-		line := cursor + style.Render(item.Name)
+		line := cursor
+		// Render indicators before the name
+		for _, ind := range item.Indicators {
+			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
+			line += indStyle.Render(ind.Symbol)
+		}
+		if len(item.Indicators) > 0 {
+			line += " "
+		}
+		line += style.Render(item.Name)
 		if item.Description != "" {
 			line += " " + dimStyle.Render(item.Description)
 		}
@@ -360,4 +388,233 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// IndicatorUpdateMsg is sent when indicator files change
+type IndicatorUpdateMsg struct {
+	Worktree   string
+	Indicators []Indicator
+}
+
+// IndicatorRefreshFunc is called to refresh indicators for a worktree
+type IndicatorRefreshFunc func(worktree string) []Indicator
+
+// PickerWithIndicatorsModel extends PickerModel with live indicator updates
+type PickerWithIndicatorsModel struct {
+	items       []Item
+	filtered    []Item
+	cursor      int
+	selected    *Item
+	textInput   textinput.Model
+	title       string
+	cancelled   bool
+	watcher     *fsnotify.Watcher
+	stateDir    string
+	refreshFunc IndicatorRefreshFunc
+}
+
+// NewPickerWithIndicators creates a picker that watches for indicator updates
+func NewPickerWithIndicators(title string, items []Item, stateDir string, refreshFunc IndicatorRefreshFunc) PickerWithIndicatorsModel {
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter..."
+	ti.Focus()
+
+	return PickerWithIndicatorsModel{
+		items:       items,
+		filtered:    items,
+		cursor:      0,
+		textInput:   ti,
+		title:       title,
+		stateDir:    stateDir,
+		refreshFunc: refreshFunc,
+	}
+}
+
+func (m PickerWithIndicatorsModel) Init() tea.Cmd {
+	return tea.Batch(textinput.Blink, m.watchIndicators())
+}
+
+func (m PickerWithIndicatorsModel) watchIndicators() tea.Cmd {
+	return func() tea.Msg {
+		if m.stateDir == "" || m.refreshFunc == nil {
+			return nil
+		}
+
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			return nil
+		}
+
+		if err := watcher.Add(m.stateDir); err != nil {
+			watcher.Close()
+			return nil
+		}
+
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return nil
+				}
+				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+					// Extract worktree name from filename
+					filename := filepath.Base(event.Name)
+					if strings.HasSuffix(filename, ".json") {
+						worktree := strings.TrimSuffix(filename, ".json")
+						return IndicatorUpdateMsg{
+							Worktree:   worktree,
+							Indicators: m.refreshFunc(worktree),
+						}
+					}
+				}
+			case _, ok := <-watcher.Errors:
+				if !ok {
+					return nil
+				}
+			}
+		}
+	}
+}
+
+func (m PickerWithIndicatorsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case IndicatorUpdateMsg:
+		// Update indicators for the matching item
+		for i := range m.items {
+			if m.items[i].IndicatorKey == msg.Worktree {
+				m.items[i].Indicators = msg.Indicators
+			}
+		}
+		// Update filtered list too
+		for i := range m.filtered {
+			if m.filtered[i].IndicatorKey == msg.Worktree {
+				m.filtered[i].Indicators = msg.Indicators
+			}
+		}
+		// Continue watching
+		return m, m.watchIndicators()
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			m.cancelled = true
+			if m.watcher != nil {
+				m.watcher.Close()
+			}
+			return m, tea.Quit
+		case "enter":
+			if len(m.filtered) > 0 && m.cursor < len(m.filtered) {
+				m.selected = &m.filtered[m.cursor]
+			}
+			if m.watcher != nil {
+				m.watcher.Close()
+			}
+			return m, tea.Quit
+		case "up", "ctrl+p":
+			if m.cursor > 0 {
+				m.cursor--
+			} else {
+				m.cursor = len(m.filtered) - 1
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			if m.cursor < len(m.filtered)-1 {
+				m.cursor++
+			} else {
+				m.cursor = 0
+			}
+			return m, nil
+		}
+	}
+
+	// Update text input
+	m.textInput, cmd = m.textInput.Update(msg)
+
+	// Filter items
+	query := strings.ToLower(m.textInput.Value())
+	m.filtered = []Item{}
+	for _, item := range m.items {
+		if query == "" || strings.Contains(strings.ToLower(item.Name), query) ||
+			strings.Contains(strings.ToLower(item.Description), query) {
+			m.filtered = append(m.filtered, item)
+		}
+	}
+
+	// Reset cursor if out of bounds
+	if m.cursor >= len(m.filtered) {
+		m.cursor = max(0, len(m.filtered)-1)
+	}
+
+	return m, cmd
+}
+
+func (m PickerWithIndicatorsModel) View() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render(m.title) + "\n\n")
+	b.WriteString(m.textInput.View() + "\n\n")
+
+	for i, item := range m.filtered {
+		cursor := "  "
+		style := normalStyle
+		if i == m.cursor {
+			cursor = "> "
+			style = selectedStyle
+		}
+
+		line := cursor
+		// Render indicators before the name
+		for _, ind := range item.Indicators {
+			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
+			line += indStyle.Render(ind.Symbol)
+		}
+		if len(item.Indicators) > 0 {
+			line += " "
+		}
+		line += style.Render(item.Name)
+		if item.Description != "" {
+			line += " " + dimStyle.Render(item.Description)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	if len(m.filtered) == 0 {
+		b.WriteString(dimStyle.Render("  No matches found") + "\n")
+	}
+
+	b.WriteString("\n" + dimStyle.Render("↑/↓/ctrl+n/p navigate • enter select • esc cancel"))
+
+	return b.String()
+}
+
+// Selected returns the selected item or nil if cancelled
+func (m PickerWithIndicatorsModel) Selected() *Item {
+	return m.selected
+}
+
+// Cancelled returns true if the user cancelled
+func (m PickerWithIndicatorsModel) Cancelled() bool {
+	return m.cancelled
+}
+
+// RunPickerWithIndicators runs the picker with live indicator updates
+func RunPickerWithIndicators(title string, items []Item, stateDir string, refreshFunc IndicatorRefreshFunc) (*Item, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no items to pick from")
+	}
+
+	p := tea.NewProgram(NewPickerWithIndicators(title, items, stateDir, refreshFunc))
+	m, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	model := m.(PickerWithIndicatorsModel)
+	if model.Cancelled() {
+		return nil, nil
+	}
+
+	return model.Selected(), nil
 }
