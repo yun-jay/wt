@@ -560,3 +560,145 @@ func TestEnsureGlobalConfigDir(t *testing.T) {
 		t.Error("Config directory was not created")
 	}
 }
+
+func TestAddBookmark(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{}}
+
+	// Add first bookmark
+	if !cfg.AddBookmark("main") {
+		t.Error("AddBookmark returned false for new bookmark")
+	}
+
+	if len(cfg.Bookmarks) != 1 {
+		t.Errorf("Bookmarks length = %d, want 1", len(cfg.Bookmarks))
+	}
+
+	if cfg.Bookmarks[0] != "main" {
+		t.Errorf("Bookmarks[0] = %s, want main", cfg.Bookmarks[0])
+	}
+
+	// Add second bookmark
+	cfg.AddBookmark("feature-x")
+	if len(cfg.Bookmarks) != 2 {
+		t.Errorf("Bookmarks length = %d, want 2", len(cfg.Bookmarks))
+	}
+}
+
+func TestAddBookmark_NoDuplicates(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{"main"}}
+
+	// Try to add duplicate
+	if cfg.AddBookmark("main") {
+		t.Error("AddBookmark returned true for duplicate")
+	}
+
+	if len(cfg.Bookmarks) != 1 {
+		t.Errorf("Bookmarks length = %d, want 1", len(cfg.Bookmarks))
+	}
+}
+
+func TestRemoveBookmark(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{"main", "feature-x", "bugfix-y"}}
+
+	// Remove middle bookmark
+	if !cfg.RemoveBookmark("feature-x") {
+		t.Error("RemoveBookmark returned false for existing bookmark")
+	}
+
+	if len(cfg.Bookmarks) != 2 {
+		t.Errorf("Bookmarks length = %d, want 2", len(cfg.Bookmarks))
+	}
+
+	// Verify order is preserved
+	if cfg.Bookmarks[0] != "main" {
+		t.Errorf("Bookmarks[0] = %s, want main", cfg.Bookmarks[0])
+	}
+	if cfg.Bookmarks[1] != "bugfix-y" {
+		t.Errorf("Bookmarks[1] = %s, want bugfix-y", cfg.Bookmarks[1])
+	}
+}
+
+func TestRemoveBookmark_NotFound(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{"main"}}
+
+	// Try to remove non-existent bookmark
+	if cfg.RemoveBookmark("nonexistent") {
+		t.Error("RemoveBookmark returned true for non-existent bookmark")
+	}
+
+	if len(cfg.Bookmarks) != 1 {
+		t.Errorf("Bookmarks length = %d, want 1", len(cfg.Bookmarks))
+	}
+}
+
+func TestIsBookmarked(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{"main", "feature-x"}}
+
+	tests := []struct {
+		name     string
+		expected bool
+	}{
+		{"main", true},
+		{"feature-x", true},
+		{"nonexistent", false},
+	}
+
+	for _, tt := range tests {
+		got := cfg.IsBookmarked(tt.name)
+		if got != tt.expected {
+			t.Errorf("IsBookmarked(%q) = %v, want %v", tt.name, got, tt.expected)
+		}
+	}
+}
+
+func TestGetBookmarkIndex(t *testing.T) {
+	cfg := &Config{Bookmarks: []string{"main", "feature-x", "bugfix-y"}}
+
+	tests := []struct {
+		name     string
+		expected int
+	}{
+		{"main", 0},
+		{"feature-x", 1},
+		{"bugfix-y", 2},
+		{"nonexistent", -1},
+	}
+
+	for _, tt := range tests {
+		got := cfg.GetBookmarkIndex(tt.name)
+		if got != tt.expected {
+			t.Errorf("GetBookmarkIndex(%q) = %d, want %d", tt.name, got, tt.expected)
+		}
+	}
+}
+
+func TestBookmarksSaveAndLoad(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "wt-config-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Bookmarks: []string{"main", "feature-x"},
+	}
+
+	// Save
+	if err := cfg.SaveProject(tmpDir); err != nil {
+		t.Fatalf("SaveProject failed: %v", err)
+	}
+
+	// Load
+	loaded, err := LoadProject(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadProject failed: %v", err)
+	}
+
+	if len(loaded.Bookmarks) != 2 {
+		t.Errorf("Loaded Bookmarks length = %d, want 2", len(loaded.Bookmarks))
+	}
+
+	if loaded.Bookmarks[0] != "main" {
+		t.Errorf("Loaded Bookmarks[0] = %s, want main", loaded.Bookmarks[0])
+	}
+}

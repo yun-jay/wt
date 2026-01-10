@@ -53,6 +53,16 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(completionsCmd)
 	rootCmd.AddCommand(toggleCmd)
+
+	// Bookmark commands
+	rootCmd.AddCommand(markCmd)
+	rootCmd.AddCommand(unmarkCmd)
+	rootCmd.AddCommand(marksCmd)
+
+	// Navigation commands
+	rootCmd.AddCommand(nextCmd)
+	rootCmd.AddCommand(prevCmd)
+	rootCmd.AddCommand(jumpCmd)
 }
 
 func initializeConfig(cmd *cobra.Command, args []string) error {
