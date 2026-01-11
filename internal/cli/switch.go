@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yunus/wt/internal/git"
+	"github.com/yunus/wt/internal/indicator"
 	"github.com/yunus/wt/internal/state"
 	"github.com/yunus/wt/internal/tmux"
 	"github.com/yunus/wt/internal/tui"
@@ -54,6 +55,21 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 		sortedNames := st.GetSortedWorktrees(wtNames)
 
+		// Create indicator manager if configured
+		var indManager *indicator.Manager
+		if cfg.HasIndicators() {
+			defs := make([]indicator.Definition, len(cfg.Indicators.Definitions))
+			for i, d := range cfg.Indicators.Definitions {
+				defs[i] = indicator.Definition{
+					Name:     d.Name,
+					Symbols:  d.Symbols,
+					Colors:   d.Colors,
+					Priority: d.Priority,
+				}
+			}
+			indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs)
+		}
+
 		// Build picker items in sorted order
 		items := make([]tui.Item, len(sortedNames))
 		for i, name := range sortedNames {
@@ -62,14 +78,41 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			if tmux.SessionExists(wt.SessionName()) {
 				desc += " [tmux]"
 			}
-			items[i] = tui.Item{
-				Name:        wt.Name(),
-				Description: desc,
-				Value:       wt,
+			item := tui.Item{
+				Name:         wt.Name(),
+				Description:  desc,
+				Value:        wt,
+				IndicatorKey: wt.Name(),
 			}
+
+			// Add indicators if configured
+			if indManager != nil {
+				results := indManager.GetIndicators(wt.Name())
+				for _, r := range results {
+					item.Indicators = append(item.Indicators, tui.Indicator{
+						Symbol: r.Symbol,
+						Color:  r.Color,
+					})
+				}
+			}
+
+			items[i] = item
 		}
 
-		selected, err := tui.RunPicker("Switch to worktree:", items)
+		// Use picker with live indicator updates if configured
+		var selected *tui.Item
+		if indManager != nil {
+			selected, err = tui.RunPickerWithIndicators("Switch to worktree:", items, indManager.GetStateDir(), func(worktree string) []tui.Indicator {
+				results := indManager.GetIndicators(worktree)
+				indicators := make([]tui.Indicator, len(results))
+				for i, r := range results {
+					indicators[i] = tui.Indicator{Symbol: r.Symbol, Color: r.Color}
+				}
+				return indicators
+			})
+		} else {
+			selected, err = tui.RunPicker("Switch to worktree:", items)
+		}
 		if err != nil {
 			return fmt.Errorf("picker failed: %w", err)
 		}

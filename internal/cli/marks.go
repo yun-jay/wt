@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yunus/wt/internal/config"
 	"github.com/yunus/wt/internal/git"
+	"github.com/yunus/wt/internal/indicator"
 	"github.com/yunus/wt/internal/state"
 	"github.com/yunus/wt/internal/tmux"
 	"github.com/yunus/wt/internal/tui"
@@ -52,6 +53,21 @@ func runMarks(cmd *cobra.Command, args []string) error {
 		wtMap[worktrees[i].Name()] = &worktrees[i]
 	}
 
+	// Create indicator manager if configured
+	var indManager *indicator.Manager
+	if cfg.HasIndicators() {
+		defs := make([]indicator.Definition, len(cfg.Indicators.Definitions))
+		for i, d := range cfg.Indicators.Definitions {
+			defs[i] = indicator.Definition{
+				Name:     d.Name,
+				Symbols:  d.Symbols,
+				Colors:   d.Colors,
+				Priority: d.Priority,
+			}
+		}
+		indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs)
+	}
+
 	// Build picker items from bookmarks
 	var items []tui.Item
 	var missingBookmarks []string
@@ -66,11 +82,26 @@ func runMarks(cmd *cobra.Command, args []string) error {
 		if tmux.SessionExists(wt.SessionName()) {
 			desc += " [tmux]"
 		}
-		items = append(items, tui.Item{
-			Name:        fmt.Sprintf("%d. %s", i+1, wt.Name()),
-			Description: desc,
-			Value:       wt,
-		})
+
+		item := tui.Item{
+			Name:         fmt.Sprintf("%d. %s", i+1, wt.Name()),
+			Description:  desc,
+			Value:        wt,
+			IndicatorKey: wt.Name(),
+		}
+
+		// Add indicators if configured
+		if indManager != nil {
+			results := indManager.GetIndicators(wt.Name())
+			for _, r := range results {
+				item.Indicators = append(item.Indicators, tui.Indicator{
+					Symbol: r.Symbol,
+					Color:  r.Color,
+				})
+			}
+		}
+
+		items = append(items, item)
 	}
 
 	// Warn about missing bookmarks

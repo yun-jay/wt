@@ -39,6 +39,33 @@ type Config struct {
 
 	// Bookmarks is an ordered list of bookmarked worktree names
 	Bookmarks []string `yaml:"bookmarks,omitempty"`
+
+	// Indicators configures the worktree status indicator system
+	Indicators *IndicatorConfig `yaml:"indicators,omitempty"`
+}
+
+// IndicatorConfig configures the indicator system
+type IndicatorConfig struct {
+	// StateDir is where indicator state files are stored (default: ~/.wt/indicators)
+	StateDir string `yaml:"state_dir,omitempty"`
+
+	// Definitions defines how each indicator type is displayed
+	Definitions []IndicatorDefinition `yaml:"definitions,omitempty"`
+}
+
+// IndicatorDefinition describes how to display a particular indicator type
+type IndicatorDefinition struct {
+	// Name is the indicator identifier (e.g., "claude", "build")
+	Name string `yaml:"name"`
+
+	// Symbols maps state values to display symbols
+	Symbols map[string]string `yaml:"symbols"`
+
+	// Colors maps state values to lipgloss color codes
+	Colors map[string]string `yaml:"colors"`
+
+	// Priority determines display order (lower = shown first)
+	Priority int `yaml:"priority,omitempty"`
 }
 
 // Window represents a tmux window (tab)
@@ -279,6 +306,11 @@ func mergeConfigs(global, project *Config) *Config {
 		merged.ProtectedBranches = project.ProtectedBranches
 	}
 
+	// Merge indicators (project overrides if present)
+	if project.Indicators != nil {
+		merged.Indicators = project.Indicators
+	}
+
 	return &merged
 }
 
@@ -360,4 +392,17 @@ func (c *Config) GetBookmarkIndex(name string) int {
 		}
 	}
 	return -1
+}
+
+// GetIndicatorStateDir returns the indicator state directory (with ~ expanded)
+func (c *Config) GetIndicatorStateDir() string {
+	if c.Indicators == nil || c.Indicators.StateDir == "" {
+		return "~/.wt/indicators"
+	}
+	return c.Indicators.StateDir
+}
+
+// HasIndicators returns true if indicators are configured
+func (c *Config) HasIndicators() bool {
+	return c.Indicators != nil && len(c.Indicators.Definitions) > 0
 }
