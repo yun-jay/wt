@@ -25,6 +25,9 @@ type Config struct {
 	// TogglePane defines a pane that can be toggled in any window
 	TogglePane *TogglePaneConfig `yaml:"toggle_pane,omitempty"`
 
+	// Setup commands to run once when creating a new worktree
+	Setup []string `yaml:"setup,omitempty"`
+
 	// PostCreate commands to run after creating worktrees
 	PostCreate []string `yaml:"post_create,omitempty"`
 
@@ -293,6 +296,9 @@ func mergeConfigs(global, project *Config) *Config {
 	if project.TogglePane != nil {
 		merged.TogglePane = project.TogglePane
 	}
+
+	// Merge setup (handle <global> marker)
+	merged.Setup = mergeStringSlice(global.Setup, project.Setup)
 
 	// Merge post_create (handle <global> marker)
 	merged.PostCreate = mergeStringSlice(global.PostCreate, project.PostCreate)

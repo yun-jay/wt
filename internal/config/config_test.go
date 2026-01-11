@@ -702,3 +702,84 @@ func TestBookmarksSaveAndLoad(t *testing.T) {
 		t.Errorf("Loaded Bookmarks[0] = %s, want main", loaded.Bookmarks[0])
 	}
 }
+
+func TestSetupSaveAndLoad(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "wt-config-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Setup: []string{"npm install", "cp .env.example .env"},
+	}
+
+	// Save
+	if err := cfg.SaveProject(tmpDir); err != nil {
+		t.Fatalf("SaveProject failed: %v", err)
+	}
+
+	// Load
+	loaded, err := LoadProject(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadProject failed: %v", err)
+	}
+
+	if len(loaded.Setup) != 2 {
+		t.Errorf("Loaded Setup length = %d, want 2", len(loaded.Setup))
+	}
+
+	if loaded.Setup[0] != "npm install" {
+		t.Errorf("Loaded Setup[0] = %s, want npm install", loaded.Setup[0])
+	}
+
+	if loaded.Setup[1] != "cp .env.example .env" {
+		t.Errorf("Loaded Setup[1] = %s, want cp .env.example .env", loaded.Setup[1])
+	}
+}
+
+func TestMergeConfigsSetup(t *testing.T) {
+	global := &Config{
+		Setup: []string{"global-setup"},
+	}
+
+	project := &Config{
+		Setup: []string{"<global>", "project-setup"},
+	}
+
+	merged := mergeConfigs(global, project)
+
+	// Setup should merge with <global> expansion
+	if len(merged.Setup) != 2 {
+		t.Errorf("Setup count = %d, want 2", len(merged.Setup))
+	}
+
+	if merged.Setup[0] != "global-setup" {
+		t.Errorf("Setup[0] = %s, want global-setup", merged.Setup[0])
+	}
+
+	if merged.Setup[1] != "project-setup" {
+		t.Errorf("Setup[1] = %s, want project-setup", merged.Setup[1])
+	}
+}
+
+func TestMergeConfigsSetupOverride(t *testing.T) {
+	global := &Config{
+		Setup: []string{"global-setup"},
+	}
+
+	project := &Config{
+		Setup: []string{"project-only-setup"},
+	}
+
+	merged := mergeConfigs(global, project)
+
+	// Without <global>, project should completely override
+	if len(merged.Setup) != 1 {
+		t.Errorf("Setup count = %d, want 1", len(merged.Setup))
+	}
+
+	if merged.Setup[0] != "project-only-setup" {
+		t.Errorf("Setup[0] = %s, want project-only-setup", merged.Setup[0])
+	}
+}
