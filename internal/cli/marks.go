@@ -65,7 +65,7 @@ func runMarks(cmd *cobra.Command, args []string) error {
 				Priority: d.Priority,
 			}
 		}
-		indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs)
+		indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs, repo.ProjectRoot)
 	}
 
 	// Build picker items from bookmarks

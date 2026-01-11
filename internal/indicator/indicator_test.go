@@ -55,7 +55,7 @@ func TestNewManager(t *testing.T) {
 	dir := setupTestDir(t)
 	defs := testDefinitions()
 
-	m := NewManager(dir, defs)
+	m := NewManager(dir, defs, "")
 
 	if m.stateDir != dir {
 		t.Errorf("expected stateDir %s, got %s", dir, m.stateDir)
@@ -65,9 +65,129 @@ func TestNewManager(t *testing.T) {
 	}
 }
 
+func TestNewManager_RelativePath(t *testing.T) {
+	projectRoot := setupTestDir(t)
+	defs := testDefinitions()
+
+	m := NewManager(".wt-indicators", defs, projectRoot)
+
+	expected := filepath.Join(projectRoot, ".wt-indicators")
+	if m.stateDir != expected {
+		t.Errorf("expected stateDir %s, got %s", expected, m.stateDir)
+	}
+}
+
+func TestNewManager_RelativePath_NoProjectRoot(t *testing.T) {
+	defs := testDefinitions()
+
+	// Without projectRoot, relative path stays relative
+	m := NewManager(".wt-indicators", defs, "")
+
+	if m.stateDir != ".wt-indicators" {
+		t.Errorf("expected stateDir .wt-indicators, got %s", m.stateDir)
+	}
+}
+
+func TestNewManager_AbsolutePath_IgnoresProjectRoot(t *testing.T) {
+	projectRoot := setupTestDir(t)
+	absDir := setupTestDir(t)
+	defs := testDefinitions()
+
+	m := NewManager(absDir, defs, projectRoot)
+
+	// Absolute path should not be modified
+	if m.stateDir != absDir {
+		t.Errorf("expected stateDir %s, got %s", absDir, m.stateDir)
+	}
+}
+
+func TestNewManager_TildeExpansion(t *testing.T) {
+	defs := testDefinitions()
+
+	m := NewManager("~/.wt/indicators", defs, "")
+
+	home, _ := os.UserHomeDir()
+	expected := filepath.Join(home, ".wt/indicators")
+	if m.stateDir != expected {
+		t.Errorf("expected stateDir %s, got %s", expected, m.stateDir)
+	}
+}
+
+func TestNewManager_TildeExpansion_IgnoresProjectRoot(t *testing.T) {
+	projectRoot := setupTestDir(t)
+	defs := testDefinitions()
+
+	m := NewManager("~/.wt/indicators", defs, projectRoot)
+
+	home, _ := os.UserHomeDir()
+	expected := filepath.Join(home, ".wt/indicators")
+	// Tilde path should expand to home, not be affected by projectRoot
+	if m.stateDir != expected {
+		t.Errorf("expected stateDir %s, got %s", expected, m.stateDir)
+	}
+}
+
+func TestResolvePath(t *testing.T) {
+	projectRoot := setupTestDir(t)
+	home, _ := os.UserHomeDir()
+
+	tests := []struct {
+		name        string
+		path        string
+		projectRoot string
+		expected    string
+	}{
+		{
+			name:        "relative path with project root",
+			path:        ".wt-indicators",
+			projectRoot: projectRoot,
+			expected:    filepath.Join(projectRoot, ".wt-indicators"),
+		},
+		{
+			name:        "relative path without project root",
+			path:        ".wt-indicators",
+			projectRoot: "",
+			expected:    ".wt-indicators",
+		},
+		{
+			name:        "absolute path ignores project root",
+			path:        "/absolute/path",
+			projectRoot: projectRoot,
+			expected:    "/absolute/path",
+		},
+		{
+			name:        "tilde expansion",
+			path:        "~/.wt/indicators",
+			projectRoot: "",
+			expected:    filepath.Join(home, ".wt/indicators"),
+		},
+		{
+			name:        "tilde expansion ignores project root",
+			path:        "~/.wt/indicators",
+			projectRoot: projectRoot,
+			expected:    filepath.Join(home, ".wt/indicators"),
+		},
+		{
+			name:        "nested relative path",
+			path:        "data/indicators",
+			projectRoot: projectRoot,
+			expected:    filepath.Join(projectRoot, "data/indicators"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ResolvePath(tt.path, tt.projectRoot)
+			if result != tt.expected {
+				t.Errorf("ResolvePath(%q, %q) = %q, want %q", tt.path, tt.projectRoot, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestGetIndicators_NoFile(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	results := m.GetIndicators("main")
 
@@ -86,7 +206,7 @@ func TestGetIndicators_NoFile(t *testing.T) {
 
 func TestGetIndicators_ValidFile(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Create a state file
 	if err := m.SetIndicator("main", "claude", "idle"); err != nil {
@@ -120,7 +240,7 @@ func TestGetIndicators_ValidFile(t *testing.T) {
 
 func TestGetIndicators_InvalidJSON(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Write invalid JSON
 	os.MkdirAll(dir, 0755)
@@ -141,7 +261,7 @@ func TestGetIndicators_InvalidJSON(t *testing.T) {
 
 func TestGetIndicators_UnknownState(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Set an unknown state
 	if err := m.SetIndicator("main", "claude", "unknown_state"); err != nil {
@@ -180,7 +300,7 @@ func TestGetIndicators_Priority(t *testing.T) {
 		{Name: "third", Priority: 3, Symbols: map[string]string{"_default": "3"}, Colors: map[string]string{"_default": "3"}},
 	}
 
-	m := NewManager(dir, defs)
+	m := NewManager(dir, defs, "")
 	results := m.GetIndicators("main")
 
 	if len(results) != 3 {
@@ -201,7 +321,7 @@ func TestGetIndicators_Priority(t *testing.T) {
 
 func TestSetIndicator_CreatesFile(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	if err := m.SetIndicator("main", "claude", "loading"); err != nil {
 		t.Fatalf("failed to set indicator: %v", err)
@@ -225,7 +345,7 @@ func TestSetIndicator_CreatesFile(t *testing.T) {
 
 func TestSetIndicator_UpdatesFile(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Set initial state
 	if err := m.SetIndicator("main", "claude", "idle"); err != nil {
@@ -252,7 +372,7 @@ func TestSetIndicator_UpdatesFile(t *testing.T) {
 
 func TestClearIndicators_All(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Set some indicators
 	m.SetIndicator("main", "claude", "idle")
@@ -272,7 +392,7 @@ func TestClearIndicators_All(t *testing.T) {
 
 func TestClearIndicators_Specific(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Set some indicators
 	m.SetIndicator("main", "claude", "idle")
@@ -330,7 +450,7 @@ func TestResolveColor(t *testing.T) {
 
 func TestListWorktreesWithState(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// No files initially
 	worktrees, err := m.ListWorktreesWithState()
@@ -356,7 +476,7 @@ func TestListWorktreesWithState(t *testing.T) {
 
 func TestStateFilePath_Sanitization(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	// Worktree names with special chars should be sanitized
 	path := m.stateFilePath("feature/branch")
@@ -368,7 +488,7 @@ func TestStateFilePath_Sanitization(t *testing.T) {
 
 func TestGetStateDir(t *testing.T) {
 	dir := setupTestDir(t)
-	m := NewManager(dir, testDefinitions())
+	m := NewManager(dir, testDefinitions(), "")
 
 	if m.GetStateDir() != dir {
 		t.Errorf("expected %s, got %s", dir, m.GetStateDir())
