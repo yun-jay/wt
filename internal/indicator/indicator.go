@@ -38,19 +38,32 @@ type Manager struct {
 }
 
 // NewManager creates a new indicator manager
-func NewManager(stateDir string, definitions []Definition) *Manager {
-	// Expand ~ in stateDir
-	if strings.HasPrefix(stateDir, "~") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			stateDir = filepath.Join(home, stateDir[1:])
-		}
-	}
+// If projectRoot is provided and stateDir is relative, it resolves against projectRoot
+func NewManager(stateDir string, definitions []Definition, projectRoot string) *Manager {
+	stateDir = ResolvePath(stateDir, projectRoot)
 
 	return &Manager{
 		stateDir:    stateDir,
 		definitions: definitions,
 	}
+}
+
+// ResolvePath expands ~ and resolves relative paths against projectRoot
+func ResolvePath(path string, projectRoot string) string {
+	// Expand ~ in path
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+
+	// Resolve relative paths against projectRoot
+	if projectRoot != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(projectRoot, path)
+	}
+
+	return path
 }
 
 // GetStateDir returns the expanded state directory path

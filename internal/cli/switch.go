@@ -67,7 +67,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 					Priority: d.Priority,
 				}
 			}
-			indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs)
+			indManager = indicator.NewManager(cfg.GetIndicatorStateDir(), defs, projectRoot)
 		}
 
 		// Build picker items in sorted order

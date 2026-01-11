@@ -75,7 +75,7 @@ func init() {
 func getIndicatorManager() *indicator.Manager {
 	if cfg == nil || !cfg.HasIndicators() {
 		// Use defaults if no config
-		return indicator.NewManager("~/.wt/indicators", nil)
+		return indicator.NewManager("~/.wt/indicators", nil, projectRoot)
 	}
 
 	// Convert config definitions to indicator definitions
@@ -89,7 +89,7 @@ func getIndicatorManager() *indicator.Manager {
 		}
 	}
 
-	return indicator.NewManager(cfg.GetIndicatorStateDir(), defs)
+	return indicator.NewManager(cfg.GetIndicatorStateDir(), defs, projectRoot)
 }
 
 func runIndicatorSet(cmd *cobra.Command, args []string) error {
