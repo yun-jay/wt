@@ -142,7 +142,7 @@ func switchToWorktree(repo *git.Repo, wtName string) error {
 		return fmt.Errorf("worktree '%s' not found", wtName)
 	}
 
-	sessionName := wt.SessionName()
+	sessionName := repo.SessionName(wt)
 
 	// Record visit in state
 	st, _ := state.LoadState(repo.ProjectRoot)

@@ -30,7 +30,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Branch: %s\n", currentWt.Branch)
 		fmt.Printf("  Path: %s\n", currentWt.Path)
 
-		sessionName := currentWt.SessionName()
+		sessionName := repo.SessionName(currentWt)
 		if tmux.SessionExists(sessionName) {
 			fmt.Printf("  Tmux session: %s (active)\n", sessionName)
 		} else {
@@ -49,7 +49,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Count active tmux sessions
 	activeSessions := 0
 	for _, wt := range worktrees {
-		if tmux.SessionExists(wt.SessionName()) {
+		if tmux.SessionExists(repo.SessionName(&wt)) {
 			activeSessions++
 		}
 	}

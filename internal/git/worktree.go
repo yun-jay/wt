@@ -30,11 +30,6 @@ func (w *Worktree) Name() string {
 	return filepath.Base(w.Path)
 }
 
-// SessionName returns the tmux session name (dots replaced with underscores)
-func (w *Worktree) SessionName() string {
-	return strings.ReplaceAll(w.Name(), ".", "_")
-}
-
 // ListWorktrees returns all worktrees for the repository
 func (r *Repo) ListWorktrees() ([]Worktree, error) {
 	cmd := exec.Command("git", "--git-dir", r.GitDir, "worktree", "list", "--porcelain")

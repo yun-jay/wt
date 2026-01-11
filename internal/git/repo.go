@@ -72,6 +72,14 @@ func (r *Repo) ProjectName() string {
 	return strings.TrimSuffix(base, ".git")
 }
 
+// SessionName returns the tmux session name for a worktree
+// Format: {project}_{worktree} e.g., "myproject_feat1"
+// This ensures unique session names across different repositories
+func (r *Repo) SessionName(wt *Worktree) string {
+	base := r.ProjectName() + "_" + wt.Name()
+	return strings.ReplaceAll(base, ".", "_")
+}
+
 // isBareRepo checks if the git directory is a bare repository
 func isBareRepo(gitDir string) (bool, error) {
 	cmd := exec.Command("git", "--git-dir", gitDir, "config", "--get", "core.bare")

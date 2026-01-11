@@ -79,7 +79,7 @@ func runMarks(cmd *cobra.Command, args []string) error {
 		}
 
 		desc := wt.Path
-		if tmux.SessionExists(wt.SessionName()) {
+		if tmux.SessionExists(repo.SessionName(wt)) {
 			desc += " [tmux]"
 		}
 
@@ -124,7 +124,7 @@ func runMarks(cmd *cobra.Command, args []string) error {
 
 	// Switch to selected worktree
 	wt := result.Value.(*git.Worktree)
-	sessionName := wt.SessionName()
+	sessionName := repo.SessionName(wt)
 
 	// Record visit in state
 	st, _ := state.LoadState(repo.ProjectRoot)
