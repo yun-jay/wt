@@ -63,6 +63,21 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		files.SetupFiles(defaultWt.Path, wt.Path, cfg.Files.Symlink, cfg.Files.Copy)
 	}
 
+	// Run setup commands (one-time initialization)
+	if len(cfg.Setup) > 0 {
+		fmt.Println("Running setup commands...")
+		for _, command := range cfg.Setup {
+			fmt.Printf("  Running: %s\n", command)
+			cmd := exec.Command("bash", "-c", command)
+			cmd.Dir = wt.Path
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("  Warning: command failed: %v\n", err)
+			}
+		}
+	}
+
 	// Run post-create commands
 	if len(cfg.PostCreate) > 0 {
 		fmt.Println("Running post-create commands...")
