@@ -55,7 +55,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 				continue // Skip protected branches in picker
 			}
 			desc := wt.Path
-			if tmux.SessionExists(wt.SessionName()) {
+			if tmux.SessionExists(repo.SessionName(&wt)) {
 				desc += " [tmux]"
 			}
 			items = append(items, tui.Item{
@@ -112,7 +112,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	sessionName := wt.SessionName()
+	sessionName := repo.SessionName(wt)
 
 	// If we're in this worktree, switch to default first
 	if isCurrentWorktree && tmux.IsInsideTmux() {
@@ -123,12 +123,13 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("Switching to '%s' before deleting...\n", defaultWt.Name())
-		if !tmux.SessionExists(defaultWt.SessionName()) {
-			if err := tmux.CreateSession(defaultWt.SessionName(), defaultWt.Path, cfg); err != nil {
+		defaultSessionName := repo.SessionName(defaultWt)
+		if !tmux.SessionExists(defaultSessionName) {
+			if err := tmux.CreateSession(defaultSessionName, defaultWt.Path, cfg); err != nil {
 				return fmt.Errorf("failed to create session for default branch: %w", err)
 			}
 		}
-		if err := tmux.SwitchSession(defaultWt.SessionName()); err != nil {
+		if err := tmux.SwitchSession(defaultSessionName); err != nil {
 			return fmt.Errorf("failed to switch to default branch: %w", err)
 		}
 	}

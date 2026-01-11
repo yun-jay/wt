@@ -202,17 +202,61 @@ func TestGetWorktreePath(t *testing.T) {
 	}
 }
 
-func TestWorktreeSessionName(t *testing.T) {
+func TestRepoSessionName(t *testing.T) {
+	repo := &Repo{
+		GitDir:       "/repos/foo.git",
+		WorktreeRoot: "/repos",
+		ProjectRoot:  "/repos/foo.git",
+	}
+
 	wt := &Worktree{
 		Path:   "/repos/foo.git/feature.branch",
 		Branch: "feature.branch",
 	}
 
-	// Session name should replace dots with underscores
-	sessionName := wt.SessionName()
-	expected := "feature_branch"
+	// Session name should include project name and replace dots with underscores
+	sessionName := repo.SessionName(wt)
+	expected := "foo_feature_branch"
 
 	if sessionName != expected {
 		t.Errorf("SessionName = %s, want %s", sessionName, expected)
+	}
+}
+
+func TestRepoSessionNameUniqueness(t *testing.T) {
+	// Two different repos with same branch name should have different session names
+	repoA := &Repo{
+		GitDir:       "/repos/project-a.git",
+		WorktreeRoot: "/repos",
+		ProjectRoot:  "/repos/project-a.git",
+	}
+
+	repoB := &Repo{
+		GitDir:       "/repos/project-b.git",
+		WorktreeRoot: "/repos",
+		ProjectRoot:  "/repos/project-b.git",
+	}
+
+	wt := &Worktree{
+		Path:   "feat1", // Same worktree name
+		Branch: "feat1",
+	}
+
+	sessionA := repoA.SessionName(wt)
+	sessionB := repoB.SessionName(wt)
+
+	if sessionA == sessionB {
+		t.Errorf("Session names should be unique: repo-a=%s, repo-b=%s", sessionA, sessionB)
+	}
+
+	expectedA := "project-a_feat1"
+	expectedB := "project-b_feat1"
+
+	if sessionA != expectedA {
+		t.Errorf("Session name for repo-a = %s, want %s", sessionA, expectedA)
+	}
+
+	if sessionB != expectedB {
+		t.Errorf("Session name for repo-b = %s, want %s", sessionB, expectedB)
 	}
 }

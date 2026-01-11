@@ -94,7 +94,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create tmux session
-	sessionName := wt.SessionName()
+	sessionName := repo.SessionName(wt)
 	fmt.Printf("Creating tmux session '%s'...\n", sessionName)
 	if err := tmux.CreateSession(sessionName, wt.Path, cfg); err != nil {
 		// Session might already exist, try to continue

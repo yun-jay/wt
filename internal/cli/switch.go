@@ -75,7 +75,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		for i, name := range sortedNames {
 			wt := wtMap[name]
 			desc := wt.Path
-			if tmux.SessionExists(wt.SessionName()) {
+			if tmux.SessionExists(repo.SessionName(&wt)) {
 				desc += " [tmux]"
 			}
 			item := tui.Item{
@@ -130,7 +130,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("worktree not found: %s", worktreeName)
 	}
 
-	sessionName := wt.SessionName()
+	sessionName := repo.SessionName(wt)
 
 	// Record visit in state
 	st, _ := state.LoadState(repo.ProjectRoot)

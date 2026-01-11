@@ -56,7 +56,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	var outputs []worktreeOutput
 	for _, wt := range worktrees {
 		isCurrent := currentWt != nil && wt.Path == currentWt.Path
-		hasSession := tmux.SessionExists(wt.SessionName())
+		hasSession := tmux.SessionExists(repo.SessionName(&wt))
 		outputs = append(outputs, worktreeOutput{
 			Name:       wt.Name(),
 			Path:       wt.Path,
