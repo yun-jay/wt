@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(switchCmd)
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(completionsCmd)
 	rootCmd.AddCommand(toggleCmd)

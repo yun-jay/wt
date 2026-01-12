@@ -144,3 +144,38 @@ func (r *Repo) GetCurrentWorktree() (*Worktree, error) {
 
 	return nil, errors.New("not inside a worktree")
 }
+
+// RemoteBranchExists checks if a branch exists on the remote (origin)
+func (r *Repo) RemoteBranchExists(branch string) (bool, error) {
+	cmd := exec.Command("git", "--git-dir", r.GitDir, "ls-remote", "--heads", "origin", branch)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// GetStaleWorktrees returns worktrees whose remote branch no longer exists
+func (r *Repo) GetStaleWorktrees() ([]Worktree, error) {
+	worktrees, err := r.ListWorktrees()
+	if err != nil {
+		return nil, err
+	}
+
+	var stale []Worktree
+	for _, wt := range worktrees {
+		// Skip protected branches (main, master, dev)
+		if wt.IsMain {
+			continue
+		}
+		exists, err := r.RemoteBranchExists(wt.Branch)
+		if err != nil {
+			// Skip on error (e.g., network issues), don't fail entire operation
+			continue
+		}
+		if !exists {
+			stale = append(stale, wt)
+		}
+	}
+	return stale, nil
+}
