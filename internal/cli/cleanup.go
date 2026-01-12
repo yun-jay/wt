@@ -1,14 +1,13 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yunus/wt/internal/git"
 	"github.com/yunus/wt/internal/tmux"
+	"github.com/yunus/wt/internal/tui"
 )
 
 var (
@@ -22,13 +21,13 @@ var cleanupCmd = &cobra.Command{
 	Long: `Find and remove worktrees whose remote branch no longer exists.
 
 This typically happens after a PR is merged and the branch is deleted on GitHub.
-The command will show all stale worktrees and ask for confirmation before deleting.`,
+An interactive picker lets you select which worktrees to delete.`,
 	RunE: runCleanup,
 }
 
 func init() {
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "show what would be deleted without deleting")
-	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "skip confirmation prompt")
+	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "delete all stale worktrees without interactive selection")
 }
 
 func runCleanup(cmd *cobra.Command, args []string) error {
@@ -50,51 +49,71 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Check if current worktree is in the stale list
 	currentWt, _ := repo.GetCurrentWorktree()
-	var currentIsStale bool
-	for _, wt := range staleWorktrees {
-		if currentWt != nil && wt.Path == currentWt.Path {
-			currentIsStale = true
-			break
-		}
-	}
 
-	// Display stale worktrees
-	fmt.Printf("\nFound %d worktree(s) with deleted remote branches:\n\n", len(staleWorktrees))
-	for i, wt := range staleWorktrees {
-		sessionStatus := ""
+	// Build picker items
+	var items []tui.Item
+	for _, wt := range staleWorktrees {
+		desc := wt.Path
 		if tmux.SessionExists(repo.SessionName(&wt)) {
-			sessionStatus = " [tmux]"
+			desc += " [tmux]"
 		}
-		currentMarker := ""
 		if currentWt != nil && wt.Path == currentWt.Path {
-			currentMarker = " (current)"
+			desc += " (current)"
 		}
-		fmt.Printf("  %d. %s%s%s\n", i+1, wt.Name(), sessionStatus, currentMarker)
-		fmt.Printf("     Path: %s\n", wt.Path)
+		items = append(items, tui.Item{
+			Name:        wt.Name(),
+			Description: desc,
+			Value:       wt,
+		})
 	}
 
 	if cleanupDryRun {
+		fmt.Printf("\nFound %d worktree(s) with deleted remote branches:\n\n", len(staleWorktrees))
+		for _, item := range items {
+			fmt.Printf("  - %s  %s\n", item.Name, item.Description)
+		}
 		fmt.Println("\n(dry-run mode - no changes made)")
 		return nil
 	}
 
-	// Warn if current worktree is stale
-	if currentIsStale && tmux.IsInsideTmux() {
-		fmt.Println("\nWarning: You are currently in a stale worktree.")
-		fmt.Println("You will be switched to the default branch before deletion.")
-	}
-
-	// Confirm deletion
-	if !cleanupForce {
-		fmt.Printf("\nDelete all %d worktree(s)? [y/N]: ", len(staleWorktrees))
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-		if response != "y" && response != "yes" {
+	// Determine which worktrees to delete
+	var toDelete []git.Worktree
+	if cleanupForce {
+		// Force mode: delete all
+		toDelete = staleWorktrees
+	} else {
+		// Interactive mode: let user select
+		selected, err := tui.RunMultiSelectPicker(
+			fmt.Sprintf("Select worktrees to delete (%d stale):", len(staleWorktrees)),
+			items,
+		)
+		if err != nil {
+			return fmt.Errorf("picker failed: %w", err)
+		}
+		if selected == nil {
 			fmt.Println("Cancelled.")
 			return nil
+		}
+		if len(selected) == 0 {
+			fmt.Println("No worktrees selected.")
+			return nil
+		}
+
+		// Extract Worktree structs from selected items
+		for _, item := range selected {
+			if wt, ok := item.Value.(git.Worktree); ok {
+				toDelete = append(toDelete, wt)
+			}
+		}
+	}
+
+	// Check if current worktree is in the deletion list
+	var currentIsStale bool
+	for _, wt := range toDelete {
+		if currentWt != nil && wt.Path == currentWt.Path {
+			currentIsStale = true
+			break
 		}
 	}
 
@@ -118,10 +137,10 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Delete worktrees sequentially
+	// Delete selected worktrees
 	fmt.Println()
 	deleted := 0
-	for _, wt := range staleWorktrees {
+	for _, wt := range toDelete {
 		fmt.Printf("Deleting %s...\n", wt.Name())
 
 		sessionName := repo.SessionName(&wt)

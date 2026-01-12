@@ -618,3 +618,198 @@ func RunPickerWithIndicators(title string, items []Item, stateDir string, refres
 
 	return model.Selected(), nil
 }
+
+// MultiSelectPickerModel is a picker that allows selecting multiple items
+type MultiSelectPickerModel struct {
+	items     []Item
+	filtered  []Item
+	cursor    int
+	selected  map[int]bool // Maps original item index to selection state
+	textInput textinput.Model
+	title     string
+	cancelled bool
+}
+
+// NewMultiSelectPicker creates a new multi-select picker with the given items
+func NewMultiSelectPicker(title string, items []Item) MultiSelectPickerModel {
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter..."
+	ti.Focus()
+
+	return MultiSelectPickerModel{
+		items:     items,
+		filtered:  items,
+		cursor:    0,
+		selected:  make(map[int]bool),
+		textInput: ti,
+		title:     title,
+	}
+}
+
+func (m MultiSelectPickerModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m MultiSelectPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			m.cancelled = true
+			return m, tea.Quit
+		case "enter":
+			return m, tea.Quit
+		case " ": // Space bar toggles selection
+			if len(m.filtered) > 0 && m.cursor < len(m.filtered) {
+				origIdx := m.getOriginalIndex(m.filtered[m.cursor])
+				if origIdx >= 0 {
+					m.selected[origIdx] = !m.selected[origIdx]
+				}
+			}
+			return m, nil
+		case "up", "ctrl+p":
+			if m.cursor > 0 {
+				m.cursor--
+			} else {
+				m.cursor = len(m.filtered) - 1 // Wrap to last
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			if m.cursor < len(m.filtered)-1 {
+				m.cursor++
+			} else {
+				m.cursor = 0 // Wrap to first
+			}
+			return m, nil
+		}
+	}
+
+	// Update text input
+	m.textInput, cmd = m.textInput.Update(msg)
+
+	// Filter items
+	query := strings.ToLower(m.textInput.Value())
+	m.filtered = []Item{}
+	for _, item := range m.items {
+		if query == "" || strings.Contains(strings.ToLower(item.Name), query) ||
+			strings.Contains(strings.ToLower(item.Description), query) {
+			m.filtered = append(m.filtered, item)
+		}
+	}
+
+	// Reset cursor if out of bounds
+	if m.cursor >= len(m.filtered) {
+		m.cursor = max(0, len(m.filtered)-1)
+	}
+
+	return m, cmd
+}
+
+// getOriginalIndex finds the index of an item in the original items slice
+func (m MultiSelectPickerModel) getOriginalIndex(item Item) int {
+	for i, orig := range m.items {
+		if orig.Name == item.Name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m MultiSelectPickerModel) View() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render(m.title) + "\n\n")
+	b.WriteString(m.textInput.View() + "\n\n")
+
+	for i, item := range m.filtered {
+		cursor := "  "
+		style := normalStyle
+		if i == m.cursor {
+			cursor = "> "
+			style = selectedStyle
+		}
+
+		// Checkbox rendering
+		origIdx := m.getOriginalIndex(item)
+		checkbox := "[ ] "
+		if m.selected[origIdx] {
+			checkbox = "[x] "
+		}
+
+		line := cursor + checkbox
+
+		// Render indicators before the name
+		for _, ind := range item.Indicators {
+			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
+			line += indStyle.Render(ind.Symbol)
+		}
+		if len(item.Indicators) > 0 {
+			line += " "
+		}
+
+		line += style.Render(item.Name)
+		if item.Description != "" {
+			line += " " + dimStyle.Render(item.Description)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	if len(m.filtered) == 0 {
+		b.WriteString(dimStyle.Render("  No matches found") + "\n")
+	}
+
+	// Footer with selection count
+	selectedCount := m.getSelectedCount()
+	footer := fmt.Sprintf("↑/↓ navigate • space toggle • enter confirm (%d selected) • esc cancel", selectedCount)
+	b.WriteString("\n" + dimStyle.Render(footer))
+
+	return b.String()
+}
+
+func (m MultiSelectPickerModel) getSelectedCount() int {
+	count := 0
+	for _, isSelected := range m.selected {
+		if isSelected {
+			count++
+		}
+	}
+	return count
+}
+
+// SelectedItems returns all selected items
+func (m MultiSelectPickerModel) SelectedItems() []Item {
+	var result []Item
+	for idx, isSelected := range m.selected {
+		if isSelected && idx < len(m.items) {
+			result = append(result, m.items[idx])
+		}
+	}
+	return result
+}
+
+// Cancelled returns true if the user cancelled
+func (m MultiSelectPickerModel) Cancelled() bool {
+	return m.cancelled
+}
+
+// RunMultiSelectPicker runs the multi-select picker and returns selected items
+func RunMultiSelectPicker(title string, items []Item) ([]Item, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no items to pick from")
+	}
+
+	p := tea.NewProgram(NewMultiSelectPicker(title, items))
+	m, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	model := m.(MultiSelectPickerModel)
+	if model.Cancelled() {
+		return nil, nil
+	}
+
+	return model.SelectedItems(), nil
+}

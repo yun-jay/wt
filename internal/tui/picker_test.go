@@ -199,3 +199,217 @@ func TestPickerEmptyFilter(t *testing.T) {
 		t.Errorf("filtered count = %d, want 0", len(picker.filtered))
 	}
 }
+
+// MultiSelectPicker tests
+
+func TestMultiSelectPickerToggle(t *testing.T) {
+	items := []Item{
+		{Name: "item1", Value: "value1"},
+		{Name: "item2", Value: "value2"},
+		{Name: "item3", Value: "value3"},
+	}
+
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Toggle first item with space
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	model, _ := picker.Update(msg)
+	picker = model.(MultiSelectPickerModel)
+
+	selected := picker.SelectedItems()
+	if len(selected) != 1 {
+		t.Errorf("selected count = %d, want 1", len(selected))
+	}
+	if selected[0].Name != "item1" {
+		t.Errorf("selected item = %s, want item1", selected[0].Name)
+	}
+
+	// Toggle first item again (deselect)
+	model, _ = picker.Update(msg)
+	picker = model.(MultiSelectPickerModel)
+
+	selected = picker.SelectedItems()
+	if len(selected) != 0 {
+		t.Errorf("selected count after deselect = %d, want 0", len(selected))
+	}
+}
+
+func TestMultiSelectPickerMultipleSelections(t *testing.T) {
+	items := []Item{
+		{Name: "item1"},
+		{Name: "item2"},
+		{Name: "item3"},
+	}
+
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Select item1
+	spaceMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	model, _ := picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// Move down and select item2
+	downMsg := tea.KeyMsg{Type: tea.KeyCtrlN}
+	model, _ = picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	model, _ = picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// Move down and select item3
+	model, _ = picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	model, _ = picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	selected := picker.SelectedItems()
+	if len(selected) != 3 {
+		t.Errorf("selected count = %d, want 3", len(selected))
+	}
+}
+
+func TestMultiSelectPickerSelectionPersistsAcrossFilter(t *testing.T) {
+	items := []Item{
+		{Name: "apple"},
+		{Name: "banana"},
+		{Name: "cherry"},
+	}
+
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Select apple
+	spaceMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	model, _ := picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// Filter to show only 'banana'
+	bMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}}
+	model, _ = picker.Update(bMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// Clear filter by pressing backspace
+	backspaceMsg := tea.KeyMsg{Type: tea.KeyBackspace}
+	model, _ = picker.Update(backspaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// apple should still be selected
+	selected := picker.SelectedItems()
+	if len(selected) != 1 {
+		t.Errorf("selection not preserved: got %d items, want 1", len(selected))
+	}
+	if len(selected) > 0 && selected[0].Name != "apple" {
+		t.Errorf("wrong item selected: got %s, want apple", selected[0].Name)
+	}
+}
+
+func TestMultiSelectPickerCancel(t *testing.T) {
+	items := []Item{{Name: "item1"}}
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Select item
+	spaceMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	model, _ := picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	// Cancel
+	escMsg := tea.KeyMsg{Type: tea.KeyEsc}
+	model, _ = picker.Update(escMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if !picker.Cancelled() {
+		t.Error("Cancelled() = false, want true")
+	}
+}
+
+func TestMultiSelectPickerConfirmEmpty(t *testing.T) {
+	items := []Item{{Name: "item1"}}
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Confirm without selecting anything
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	model, _ := picker.Update(enterMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	selected := picker.SelectedItems()
+	if len(selected) != 0 {
+		t.Errorf("selected count = %d, want 0", len(selected))
+	}
+	if picker.Cancelled() {
+		t.Error("should not be cancelled when pressing enter")
+	}
+}
+
+func TestMultiSelectPickerNavigation(t *testing.T) {
+	items := []Item{
+		{Name: "item1"},
+		{Name: "item2"},
+		{Name: "item3"},
+	}
+
+	picker := NewMultiSelectPicker("Test", items)
+
+	// Move down
+	downMsg := tea.KeyMsg{Type: tea.KeyCtrlN}
+	model, _ := picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if picker.cursor != 1 {
+		t.Errorf("cursor after down = %d, want 1", picker.cursor)
+	}
+
+	// Move down to last
+	model, _ = picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if picker.cursor != 2 {
+		t.Errorf("cursor after second down = %d, want 2", picker.cursor)
+	}
+
+	// Move down at last should wrap to first
+	model, _ = picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if picker.cursor != 0 {
+		t.Errorf("cursor after wrap = %d, want 0", picker.cursor)
+	}
+
+	// Move up at first should wrap to last
+	upMsg := tea.KeyMsg{Type: tea.KeyCtrlP}
+	model, _ = picker.Update(upMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if picker.cursor != 2 {
+		t.Errorf("cursor after up wrap = %d, want 2", picker.cursor)
+	}
+}
+
+func TestMultiSelectPickerGetSelectedCount(t *testing.T) {
+	items := []Item{
+		{Name: "item1"},
+		{Name: "item2"},
+		{Name: "item3"},
+	}
+
+	picker := NewMultiSelectPicker("Test", items)
+
+	if picker.getSelectedCount() != 0 {
+		t.Errorf("initial selected count = %d, want 0", picker.getSelectedCount())
+	}
+
+	// Select two items
+	spaceMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	model, _ := picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	downMsg := tea.KeyMsg{Type: tea.KeyCtrlN}
+	model, _ = picker.Update(downMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	model, _ = picker.Update(spaceMsg)
+	picker = model.(MultiSelectPickerModel)
+
+	if picker.getSelectedCount() != 2 {
+		t.Errorf("selected count after selections = %d, want 2", picker.getSelectedCount())
+	}
+}
