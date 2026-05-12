@@ -33,6 +33,93 @@ type Item struct {
 	IndicatorKey string      // Key for looking up live indicator updates (e.g., worktree name)
 }
 
+// viewport tracks the visible slice of a list so the picker can scroll
+// instead of overflowing the pane when the list is taller than the terminal.
+type viewport struct {
+	height int // terminal height; 0 means unknown — render every item
+	offset int // index of the first visible item
+}
+
+// viewportChrome is the number of non-item rows the picker draws
+// (title+blank, input+blank, both scroll markers, blank+hint).
+const viewportChrome = 8
+
+func (v *viewport) visibleCount(total int) int {
+	if v.height == 0 {
+		return total
+	}
+	n := v.height - viewportChrome
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+func (v *viewport) adjust(cursor, total int) {
+	if total == 0 {
+		v.offset = 0
+		return
+	}
+	visible := v.visibleCount(total)
+	if cursor < v.offset {
+		v.offset = cursor
+	} else if cursor >= v.offset+visible {
+		v.offset = cursor - visible + 1
+	}
+	maxOff := total - visible
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if v.offset > maxOff {
+		v.offset = maxOff
+	}
+	if v.offset < 0 {
+		v.offset = 0
+	}
+}
+
+func renderItem(item Item, selected bool) string {
+	cursor := "  "
+	style := normalStyle
+	if selected {
+		cursor = "> "
+		style = selectedStyle
+	}
+	line := cursor
+	for _, ind := range item.Indicators {
+		line += lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color)).Render(ind.Symbol)
+	}
+	if len(item.Indicators) > 0 {
+		line += " "
+	}
+	line += style.Render(item.Name)
+	if item.Description != "" {
+		line += " " + dimStyle.Render(item.Description)
+	}
+	return line
+}
+
+func renderList(b *strings.Builder, filtered []Item, cursor int, v *viewport) {
+	if len(filtered) == 0 {
+		b.WriteString(dimStyle.Render("  No matches found") + "\n")
+		return
+	}
+	visible := v.visibleCount(len(filtered))
+	end := v.offset + visible
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	if v.offset > 0 {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("  ↑ %d more", v.offset)) + "\n")
+	}
+	for i := v.offset; i < end; i++ {
+		b.WriteString(renderItem(filtered[i], i == cursor) + "\n")
+	}
+	if end < len(filtered) {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("  ↓ %d more", len(filtered)-end)) + "\n")
+	}
+}
+
 // PickerModel is the model for the interactive picker
 type PickerModel struct {
 	items     []Item
@@ -42,6 +129,7 @@ type PickerModel struct {
 	textInput textinput.Model
 	title     string
 	cancelled bool
+	viewport  viewport
 }
 
 // NewPicker creates a new picker with the given items
@@ -67,6 +155,10 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.viewport.height = msg.Height
+		m.viewport.adjust(m.cursor, len(m.filtered))
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -83,6 +175,7 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = len(m.filtered) - 1 // Wrap to last
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		case "down", "ctrl+n":
 			if m.cursor < len(m.filtered)-1 {
@@ -90,6 +183,26 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = 0 // Wrap to first
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgup", "ctrl+b":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor -= step
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgdown", "ctrl+f":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor += step
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		}
 	}
@@ -111,6 +224,7 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
+	m.viewport.adjust(m.cursor, len(m.filtered))
 
 	return m, cmd
 }
@@ -120,36 +234,8 @@ func (m PickerModel) View() string {
 
 	b.WriteString(titleStyle.Render(m.title) + "\n\n")
 	b.WriteString(m.textInput.View() + "\n\n")
-
-	for i, item := range m.filtered {
-		cursor := "  "
-		style := normalStyle
-		if i == m.cursor {
-			cursor = "> "
-			style = selectedStyle
-		}
-
-		line := cursor
-		// Render indicators before the name
-		for _, ind := range item.Indicators {
-			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
-			line += indStyle.Render(ind.Symbol)
-		}
-		if len(item.Indicators) > 0 {
-			line += " "
-		}
-		line += style.Render(item.Name)
-		if item.Description != "" {
-			line += " " + dimStyle.Render(item.Description)
-		}
-		b.WriteString(line + "\n")
-	}
-
-	if len(m.filtered) == 0 {
-		b.WriteString(dimStyle.Render("  No matches found") + "\n")
-	}
-
-	b.WriteString("\n" + dimStyle.Render("↑/↓/ctrl+n/p navigate • enter select • esc cancel"))
+	renderList(&b, m.filtered, m.cursor, &m.viewport)
+	b.WriteString("\n" + dimStyle.Render("↑/↓/ctrl+n/p navigate • pgup/pgdn jump • enter select • esc cancel"))
 
 	return b.String()
 }
@@ -199,6 +285,7 @@ type PickerWithDeleteModel struct {
 	deleteHandler DeleteHandler
 	deleted       bool
 	emptyMessage  string
+	viewport      viewport
 }
 
 // NewPickerWithDelete creates a picker with delete support
@@ -225,6 +312,10 @@ func (m PickerWithDeleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.viewport.height = msg.Height
+		m.viewport.adjust(m.cursor, len(m.filtered))
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -247,6 +338,7 @@ func (m PickerWithDeleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.cursor >= len(m.filtered) {
 						m.cursor = max(0, len(m.filtered)-1)
 					}
+					m.viewport.adjust(m.cursor, len(m.filtered))
 				}
 			}
 			return m, nil
@@ -256,6 +348,7 @@ func (m PickerWithDeleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = len(m.filtered) - 1
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		case "down", "ctrl+n":
 			if m.cursor < len(m.filtered)-1 {
@@ -263,6 +356,26 @@ func (m PickerWithDeleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = 0
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgup", "ctrl+b":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor -= step
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgdown", "ctrl+f":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor += step
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		}
 	}
@@ -284,6 +397,7 @@ func (m PickerWithDeleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
+	m.viewport.adjust(m.cursor, len(m.filtered))
 
 	return m, cmd
 }
@@ -305,36 +419,8 @@ func (m PickerWithDeleteModel) View() string {
 	}
 
 	b.WriteString(m.textInput.View() + "\n\n")
-
-	for i, item := range m.filtered {
-		cursor := "  "
-		style := normalStyle
-		if i == m.cursor {
-			cursor = "> "
-			style = selectedStyle
-		}
-
-		line := cursor
-		// Render indicators before the name
-		for _, ind := range item.Indicators {
-			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
-			line += indStyle.Render(ind.Symbol)
-		}
-		if len(item.Indicators) > 0 {
-			line += " "
-		}
-		line += style.Render(item.Name)
-		if item.Description != "" {
-			line += " " + dimStyle.Render(item.Description)
-		}
-		b.WriteString(line + "\n")
-	}
-
-	if len(m.filtered) == 0 {
-		b.WriteString(dimStyle.Render("  No matches found") + "\n")
-	}
-
-	b.WriteString("\n" + dimStyle.Render("enter: switch  x: remove  esc: cancel"))
+	renderList(&b, m.filtered, m.cursor, &m.viewport)
+	b.WriteString("\n" + dimStyle.Render("enter: switch  x: remove  pgup/pgdn: jump  esc: cancel"))
 
 	return b.String()
 }
@@ -411,6 +497,7 @@ type PickerWithIndicatorsModel struct {
 	watcher     *fsnotify.Watcher
 	stateDir    string
 	refreshFunc IndicatorRefreshFunc
+	viewport    viewport
 }
 
 // NewPickerWithIndicators creates a picker that watches for indicator updates
@@ -480,6 +567,11 @@ func (m PickerWithIndicatorsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.viewport.height = msg.Height
+		m.viewport.adjust(m.cursor, len(m.filtered))
+		return m, nil
+
 	case IndicatorUpdateMsg:
 		// Update indicators for the matching item
 		for i := range m.items {
@@ -518,6 +610,7 @@ func (m PickerWithIndicatorsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = len(m.filtered) - 1
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		case "down", "ctrl+n":
 			if m.cursor < len(m.filtered)-1 {
@@ -525,6 +618,26 @@ func (m PickerWithIndicatorsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor = 0
 			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgup", "ctrl+b":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor -= step
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
+			return m, nil
+		case "pgdown", "ctrl+f":
+			step := m.viewport.visibleCount(len(m.filtered))
+			m.cursor += step
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+			}
+			m.viewport.adjust(m.cursor, len(m.filtered))
 			return m, nil
 		}
 	}
@@ -546,6 +659,7 @@ func (m PickerWithIndicatorsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
+	m.viewport.adjust(m.cursor, len(m.filtered))
 
 	return m, cmd
 }
@@ -555,36 +669,8 @@ func (m PickerWithIndicatorsModel) View() string {
 
 	b.WriteString(titleStyle.Render(m.title) + "\n\n")
 	b.WriteString(m.textInput.View() + "\n\n")
-
-	for i, item := range m.filtered {
-		cursor := "  "
-		style := normalStyle
-		if i == m.cursor {
-			cursor = "> "
-			style = selectedStyle
-		}
-
-		line := cursor
-		// Render indicators before the name
-		for _, ind := range item.Indicators {
-			indStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ind.Color))
-			line += indStyle.Render(ind.Symbol)
-		}
-		if len(item.Indicators) > 0 {
-			line += " "
-		}
-		line += style.Render(item.Name)
-		if item.Description != "" {
-			line += " " + dimStyle.Render(item.Description)
-		}
-		b.WriteString(line + "\n")
-	}
-
-	if len(m.filtered) == 0 {
-		b.WriteString(dimStyle.Render("  No matches found") + "\n")
-	}
-
-	b.WriteString("\n" + dimStyle.Render("↑/↓/ctrl+n/p navigate • enter select • esc cancel"))
+	renderList(&b, m.filtered, m.cursor, &m.viewport)
+	b.WriteString("\n" + dimStyle.Render("↑/↓/ctrl+n/p navigate • pgup/pgdn jump • enter select • esc cancel"))
 
 	return b.String()
 }
